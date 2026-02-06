@@ -1,13 +1,13 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
-	"time"
-	"RepLen-backend/internal/store"
-	"RepLen-backend/internal/intent"
+"encoding/json"
+"fmt"
+"log"
+"net/http"
+"time"
+"github.com/Tanya0816/RepLen/RepLen-backend/internal/store"
+"github.com/Tanya0816/RepLen/RepLen-backend/internal/intent"
 )
 var intentStore *store.IntentStore
 func main() {

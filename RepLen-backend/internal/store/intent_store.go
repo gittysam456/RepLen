@@ -1,9 +1,9 @@
 package store
 
 import (
-	"sync"
+"sync"
 
-	"RepLen-backend/internal/intent"
+"github.com/Tanya0816/RepLen/RepLen-backend/internal/intent"
 )
 
 type IntentStore struct {
