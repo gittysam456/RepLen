@@ -41,11 +41,9 @@ contract LPPrivacy is IHooks{
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         bytes calldata hookData
-    ) external payable  returns (bytes4) {
+    ) external returns (bytes4) {
 
         require( msg.sender == address(poolManager),"You can't proceed");
-
-        intentFee[intentid] = msg.value;
 
         LiquidityIntent memory _liquidityIntent ;
         PoolKey poolkey = key;
@@ -88,8 +86,17 @@ contract LPPrivacy is IHooks{
 
     }
 
-    function executeIntent(uint256 intentId, uint minFee) public {
+    function queueIntentForFee(uint256 fees, uint256 intentId) public payable  {
+        require(fees <= msg.value);
+        intentFee[intentId] = fees;
+
+    }
+
+    function executeIntent(uint256 intentId, uint Fees) public {
         if (intentId >= intentid) {
+            revert();
+        }
+        if (intentFee[intentId] <= 0) {
             revert();
         }
         if (intent[intentId].isExecuted == true) {
@@ -111,8 +118,6 @@ contract LPPrivacy is IHooks{
                 revert();
             }
         }
-
-        require(msg.value >= minFee);
         
 
         if (intent[intentId].action == Remove) {
@@ -120,7 +125,7 @@ contract LPPrivacy is IHooks{
                 revert();
             }
         }
-        hookData = bytes(intent[intentId].lp);
+        hookData = abi.encode(msg.sender, intent[intentId].lp, intentId);
 
         poolManager.modifyLiquidity(intent[intentId].poolKey, tParams, hookData);
 
@@ -128,5 +133,7 @@ contract LPPrivacy is IHooks{
         if (current_block >= intent[intentId].executeAfterBlock) {
             intent[intentId].isExecuted = true;
         }
+        
+        intentFee[intentId] = 0;
     }
 }
