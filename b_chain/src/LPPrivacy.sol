@@ -10,6 +10,7 @@ contract LPPrivacy is IHooks{
     IPoolManager public poolManager;
 
     uint256 public delay_block;
+    uint256 public gracePeriod;
 
     event queuedIntent(uint256);
     event executedIntent(uint256);
@@ -27,11 +28,14 @@ contract LPPrivacy is IHooks{
         int128 liquidityDelta;
         uint256 queueBlock;
         uint256 executeAfterBlock;
+        uint256 expiryBlock;
+        bool isCancelled;
         bool isExecuted;
     }
 
     mapping(uint256 => LiquidityIntent ) public intent;
     mapping (uint256 => uint256) intentFee;
+    mapping (address => uint256) rewards;
 
     uint256 intentid = 0;
 
@@ -52,6 +56,7 @@ contract LPPrivacy is IHooks{
         _liquidityIntent.queueBlock = block.number;
         _liquidityIntent.executeAfterBlock = _liquidityIntent.queueBlock + delay_block;
         _liquidityIntent.isExecuted = false;
+        _liquidityIntent.expiryBlock = block.number + delay_block + gracePeriod;
         intent[intentid] =  _liquidityIntent;
         intent[intentid].tickLower = params.tickLower;
         intent[intentid].tickUpper = params.tickUpper;
@@ -74,6 +79,7 @@ contract LPPrivacy is IHooks{
         _liquidityIntent.action = actionType.Remove;
         _liquidityIntent.queueBlock = block.number;
         _liquidityIntent.executeAfterBlock = _liquidityIntent.queueBlock + delay_block;
+        _liquidityIntent.expiryBlock = block.number + delay_block + gracePeriod;
         _liquidityIntent.isExecuted = false;
         intent[intentid] =  _liquidityIntent;
         intent[intentid].tickLower = params.tickLower;
@@ -85,14 +91,16 @@ contract LPPrivacy is IHooks{
 
     }
 
-    function queueIntentForFee(uint256 fees, uint256 intentId) public payable  {
-        require(msg.sender == intent.lp);
+    function queueIntentFee(uint256 fees, uint256 intentId) public payable  {
+        require(msg.sender == intent[intentId].lp);
         require(msg.value >= fees);
         intentFee[intentId] = fees;
 
     }
 
     function executeIntent(uint256 intentId, uint Fees) public {
+        require(!intent[id].isCancelled);
+
         if (intentId >= intentid) {
             revert();
         }
@@ -107,6 +115,8 @@ contract LPPrivacy is IHooks{
             revert();
         }
 
+        require(current_block <= intent[intentId].expiryBlock);
+
         ModifyLiquidityParams tParams;
         int24 tLower = intent[intentId].tickLower;
         int24 tUpper = intent[intentId].tickUpper;
@@ -119,8 +129,7 @@ contract LPPrivacy is IHooks{
             if (lDelta <= 0) {
                 revert();
             }
-        }
-        
+        }   
 
         if (intent[intentId].action == Remove) {
             if (lDelta >= 0) {
@@ -129,14 +138,11 @@ contract LPPrivacy is IHooks{
         }
 
         bytes  hookData;
-
         hookData = abi.encode(msg.sender, intent[intentId].lp, intentId);
 
         poolManager.modifyLiquidity(intent[intentId].poolKey, tParams, hookData);
-
         
     }
-
 
      function afterAddLiquidity(
         address sender,
@@ -152,13 +158,14 @@ contract LPPrivacy is IHooks{
         LiquidityIntent storage intentt = intent[intentId];
 
         require(!intentt.isExecuted);
-
         uint256 fees = intentFee[intentId];
-          intentFee[intentId] = 0;
+        intentFee[intentId] = 0;
+        rewards[executerAddress] += fees;
+        intentt[intentId].isExecuted = true;
+
 
         address token0 = key.currency0;
         address token1 = key.currency1;
-
 
         int256 a0 = delta.amount0();
         int256 a1 = delta.amount1();
@@ -177,13 +184,8 @@ contract LPPrivacy is IHooks{
         }
 
         if (a1 > 0) {
-            poolManager.take(token1, lp, a1);
+            poolManager.take(token1, LPAddress, a1);
         }
-        
-        (bool result, ) = executerAddress.call{value: fees}("");
-        require(success, "payment failed");
-
-        intentt[intentId].isExecuted = true;
       
         emit executedIntent(intentId);
         return (this.afterAddLiquidity.selector, delta);
@@ -203,9 +205,10 @@ contract LPPrivacy is IHooks{
         LiquidityIntent storage intentt = intent[intentId];
 
         require(!intentt.isExecuted);
-
         uint256 fees = intentFee[intentId];
         intentFee[intentId] = 0;
+        rewards[executerAddress] += fees;
+        intentt[intentId].isExecuted = true;
 
         address token0 = key.currency0;
         address token1 = key.currency1;
@@ -214,29 +217,50 @@ contract LPPrivacy is IHooks{
         int256 a1 = delta.amount1();
 
         if (a0 < 0) {
-            poolManager.settle(token0, lp, -a0);
+            poolManager.settle(token0, LPAddress, -a0);
         }
 
         if (a0 > 0) {
-            poolManager.take(token0, lp, a0);
+            poolManager.take(token0, LPAddress, a0);
         }
         
         if (a1 < 0) {
-            poolManager.settle(token1, lp, -a1);
+            poolManager.settle(token1, LPAddress, -a1);
         }
 
         if (a1 > 0) {
-            poolManager.take(token1, lp, a1);
+            poolManager.take(token1, LPAddress, a1);
         }
-
-        
-        (bool result, ) = executerAddress.call{value: fees}("");
-        require(success, "payment failed");
-        
-        intentt[intentId].isExecuted = true;
       
         emit executedIntent(intentId);
         return (this.afterRemoveLiquidity.selector,delta);
+
+    }
+
+    function withdraw(uint256 amount, address account) external payable {
+        amount = rewards[msg.sender];
+        require(amount > 0);
+        rewards[msg.sender] = 0;
+
+    }
+
+    function refundAfterExpiry(uint256 id) external payable returns(uint256) {
+        require(block.number <= intent[id].expiryBlock);
+        require(!intent[id].isExecuted);
+        require(!intent[id].isCancelled);
+        uint256 fee = intentFee[id];
+        intent[id] = 0;
+        poolManager.settle(fee);
+
+
+    }
+
+    function cancelIntent(uint256 id) {
+        require(id < intentid);
+        require(msg.sender == intent[id].lp);
+        require(!intent[id].isExecuted);
+        require(!intent[id].isCancelled);
+        intent[id].isCancelled = true;
 
     }
 
