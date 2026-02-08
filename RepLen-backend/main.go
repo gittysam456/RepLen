@@ -8,17 +8,19 @@ import (
 "time"
 "github.com/Tanya0816/RepLen/RepLen-backend/internal/store"
 "github.com/Tanya0816/RepLen/RepLen-backend/internal/intent"
+"github.com/Tanya0816/RepLen/RepLen-backend/internal/chainexecution"
 )
 var intentStore *store.IntentStore
 func main() {
+	ethExec := &chainexecution.EthExecutor{}
 	intentStore = store.NewIntentStore()
+	intentStore.SetChainExecutor(ethExec)
 	http.HandleFunc("/health",healthHandler)
     http.HandleFunc("/intent", createIntentHandler)    // POST /intent
     http.HandleFunc("/intents", listIntentsHandler)  // GET /intents
 	http.HandleFunc("/executor/status", executorStatusHandler)
     http.HandleFunc("/intents/ready", readyIntentsHandler)
-
-    intentStore.StartExecutor() // Start the background executor to process intents
+	intentStore.StartExecutor() // Start the background executor to process intents
 	log.Println("Server is running on port 3000") 
 	log.Fatal(http.ListenAndServe(":3000", nil))
 }

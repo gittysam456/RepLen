@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 	"github.com/Tanya0816/RepLen/RepLen-backend/internal/intent"
+	"github.com/Tanya0816/RepLen/RepLen-backend/internal/chainexecution"
 )
 
 type IntentStore struct {
@@ -12,6 +13,7 @@ type IntentStore struct {
 	executorRunning bool
 	lastCheckedAt time.Time
 	tickInterval    time.Duration
+	chainExecutor  chainexecution.ChainExecutor
 
 }
 
@@ -50,7 +52,7 @@ func (s *IntentStore) ExecutorStatus() map[string]interface{} {
 	executed := 0
 
 	for _, i := range s.intents {
-		if i.Status == "PENDING" {
+		if i.Status == "PENDING" && (i.ExecuteAt.Before(time.Now()) || i.ExecuteAt.Equal(time.Now())) {
 			pending++
 		}
 		if i.Status == "EXECUTED" {
@@ -82,4 +84,7 @@ func (s *IntentStore) GetReadyIntents() []intent.LenIntent {
 	}
 
 	return ready
+}
+func (s *IntentStore) SetChainExecutor(exec chainexecution.ChainExecutor) {
+	s.chainExecutor = exec
 }

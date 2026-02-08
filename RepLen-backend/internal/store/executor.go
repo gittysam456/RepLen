@@ -7,10 +7,13 @@ import (
 )
 
 func(s *IntentStore) StartExecutor() {   // This function starts a background goroutine and has ticker for checking every 3 seconds.
-	ticker := time.NewTicker(5 * time.Second)
+	if s.executorRunning {
+		return
+	}
+	s.executorRunning = true
+	ticker := time.NewTicker(s.tickInterval)
 	go func() {
 		for range ticker.C {
-			//log.Println("Executing intents...")
 			s.executeReadyIntents()
 		}
 	}()
@@ -27,7 +30,12 @@ func (s *IntentStore) executeReadyIntents() {
 		}
 		if intent.ExecuteAt.Before(now) || intent.ExecuteAt.Equal(now) {
 			readyCount++
-
+        if s.chainExecutor != nil {
+			err := s.chainExecutor.ExecuteIntent(intent)
+			if err != nil {
+				log.Printf("[EXECUTOR] Error executing intent ID=%s: %v", intent.ID, err)
+				continue
+			}
 			log.Printf(
 				"[EXECUTOR] Executing intent ID=%s Action=%s Amount=%f",
 				intent.ID,
@@ -40,9 +48,11 @@ func (s *IntentStore) executeReadyIntents() {
 			intent.ExecutedAt = &executedTime
 			s.lastCheckedAt = time.Now()
 			s.intents[id] = intent
+	
 		}
 	}
 	if readyCount > 0 {
 		log.Printf("[EXECUTOR] %d intent(s) executed in this cycle", readyCount)
 	}
+}
 }
