@@ -1,0 +1,6 @@
+[submodule "lib/V4-Core"]
+	path = lib/V4-Core
+	url = https://github.com/Uniswap/V4-Core
+[submodule "b_chain/lib/v4-core"]
+	path = b_chain/lib/v4-core
+	url = https://github.com/Uniswap/v4-core
