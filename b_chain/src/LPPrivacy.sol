@@ -4,8 +4,7 @@ pragma solidity ^0.8.10;
 
 import "@V4-Core/src/interfaces/IHooks.sol";
 import "@V4-Core/src/interfaces/IPoolManager.sol";
-import {Hooks} from "@V4-Core/src/libraries/Hooks.sol";
-import {IERC20Minimal} from "@V4-Core/src/interfaces/external/IERC20Minimal.sol";
+import "@V4-Core/src/libraries/Hooks.sol";
 
 contract LPPrivacy is IHooks {
     IPoolManager public poolManager;
@@ -68,7 +67,7 @@ contract LPPrivacy is IHooks {
     function beforeAddLiquidity(
         address sender,
         PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
+        IPoolManager.ModifyLiquidityParams calldata params,
         bytes calldata hookData
     ) external override returns (bytes4) {
         require(msg.sender == address(poolManager), "You can't proceed");
@@ -87,7 +86,7 @@ contract LPPrivacy is IHooks {
         intent[intentid] = _liquidityIntent;
         intent[intentid].tickLower = params.tickLower;
         intent[intentid].tickUpper = params.tickUpper;
-        intent[intentid].liquidityDelta = params.liquidityDelta;
+        intent[intentid].liquidityDelta = int128(params.liquidityDelta);
         emit queuedIntent(intentid);
         intentid += 1;
         return this.beforeAddLiquidity.selector;
@@ -96,7 +95,7 @@ contract LPPrivacy is IHooks {
     function beforeRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
+        IPoolManager.ModifyLiquidityParams calldata params,
         bytes calldata hookData
     ) external override returns (bytes4) {
         LiquidityIntent memory _liquidityIntent;
@@ -113,7 +112,7 @@ contract LPPrivacy is IHooks {
         intent[intentid] = _liquidityIntent;
         intent[intentid].tickLower = params.tickLower;
         intent[intentid].tickUpper = params.tickUpper;
-        intent[intentid].liquidityDelta = params.liquidityDelta;
+        intent[intentid].liquidityDelta = int128(params.liquidityDelta);
         emit queuedIntent(intentid);
         intentid += 1;
         return this.beforeRemoveLiquidity.selector;
@@ -143,7 +142,7 @@ contract LPPrivacy is IHooks {
 
         require(current_block <= intent[intentId].expiryBlock);
 
-        ModifyLiquidityParams tParams;
+        IPoolManager.ModifyLiquidityParams memory tParams;
         int24 tLower = intent[intentId].tickLower;
         int24 tUpper = intent[intentId].tickUpper;
         int128 lDelta = intent[intentId].liquidityDelta;
@@ -151,19 +150,19 @@ contract LPPrivacy is IHooks {
         tParams.tickUpper = tUpper;
         tParams.liquidityDelta = lDelta;
 
-        if (intent[intentId].action == Add) {
+        if (intent[intentId].action == actionType.Add) {
             if (lDelta <= 0) {
                 revert();
             }
         }
 
-        if (intent[intentId].action == Remove) {
+        if (intent[intentId].action == actionType.Remove) {
             if (lDelta >= 0) {
                 revert();
             }
         }
 
-        bytes hookData;
+        bytes memory hookData;
         hookData = abi.encode(msg.sender, intent[intentId].lp, intentId);
 
         poolManager.modifyLiquidity(
@@ -176,12 +175,12 @@ contract LPPrivacy is IHooks {
     function afterAddLiquidity(
         address sender,
         PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
+        IPoolManager.ModifyLiquidityParams calldata params,
         BalanceDelta delta,
         BalanceDelta feesAccrued,
         bytes calldata hookData
     ) external override returns (bytes4, BalanceDelta) {
-        require(msg.sender == poolManager);
+        require(msg.sender == address(poolManager));
         (address executerAddress, address LPAddress, uint256 intentId) = abi
             .decode(hookData, (address, address, uint256));
         LiquidityIntent storage intentt = intent[intentId];
@@ -222,12 +221,12 @@ contract LPPrivacy is IHooks {
     function afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
+        IPoolManager.ModifyLiquidityParams calldata params,
         BalanceDelta delta,
         BalanceDelta feesAccrued,
         bytes calldata hookData
     ) external override returns (bytes4, BalanceDelta) {
-        require(msg.sender == poolManager);
+        require(msg.sender == address(poolManager));
         (address executerAddress, address LPAddress, uint256 intentId) = abi
             .decode(hookData, (address, address, uint256));
         LiquidityIntent storage intentt = intent[intentId];
@@ -330,6 +329,63 @@ contract LPPrivacy is IHooks {
                 afterDonate: false
             });
     }
+
+    function beforeInitialize(
+    address,
+    PoolKey calldata,
+    uint160
+) external pure override returns (bytes4) {
+    return this.beforeInitialize.selector;
+}
+
+function afterInitialize(
+    address,
+    PoolKey calldata,
+    uint160,
+    int24
+) external pure override returns (bytes4) {
+    return this.afterInitialize.selector;
+}
+
+function beforeSwap(
+    address,
+    PoolKey calldata,
+    IPoolManager.SwapParams calldata,
+    bytes calldata
+) external pure override returns (bytes4) {
+    return this.beforeSwap.selector;
+}
+
+function afterSwap(
+    address,
+    PoolKey calldata,
+    IPoolManager.SwapParams calldata,
+    BalanceDelta,
+    bytes calldata
+) external pure override returns (bytes4) {
+    return this.afterSwap.selector;
+}
+
+function beforeDonate(
+    address,
+    PoolKey calldata,
+    uint256,
+    uint256,
+    bytes calldata
+) external pure override returns (bytes4) {
+    return this.beforeDonate.selector;
+}
+
+function afterDonate(
+    address,
+    PoolKey calldata,
+    uint256,
+    uint256,
+    bytes calldata
+) external pure override returns (bytes4) {
+    return this.afterDonate.selector;
+}
+
 
     receive() external payable {}
 }
