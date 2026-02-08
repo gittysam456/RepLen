@@ -1,57 +1,90 @@
 //SPDX-License-Identifier:MIT
 
-pragma solidity^0.8.10;
+pragma solidity ^0.8.10;
 
 import "@V4-Core/src/interfaces/IHooks.sol";
 import "@V4-Core/src/interfaces/IPoolManager.sol";
+import {Hooks} from "@V4-Core/src/libraries/Hooks.sol";
+import {IERC20Minimal} from "@V4-Core/src/interfaces/external/IERC20Minimal.sol";
 
-contract LPPrivacy is IHooks{
+contract LPPrivacy is IHooks {
     IPoolManager public poolManager;
 
     uint256 public delay_block;
+    uint256 public gracePeriod;
+
+    constructor(IPoolManager manager, uint256 delay, uint256 grace) {
+        require(address(manager) != address(0), "Bad manager");
+        require(delay > 0, "Bad delay");
+        require(grace > 0, "Bad grace period");
+
+        poolManager = manager;
+        delay_block = delay;
+        gracePeriod = grace;
+    }
+
+    bool private locked;
 
     event queuedIntent(uint256);
     event executedIntent(uint256);
 
     enum actionType {
-            Add, Remove
-        };
+        Add,
+        Remove
+    }
 
     struct LiquidityIntent {
         address lp;
         PoolKey poolKey;
         actionType action;
-        int24 tickLower; 
+        int24 tickLower;
         int24 tickUpper;
         int128 liquidityDelta;
         uint256 queueBlock;
         uint256 executeAfterBlock;
+        uint256 expiryBlock;
+        bool isCancelled;
         bool isExecuted;
     }
 
-    mapping(uint256 => LiquidityIntent ) public intent;
-    mapping (uint256 => uint256) intentFee;
+    mapping(uint256 => LiquidityIntent) public intent;
+    mapping(uint256 => uint256) intentFee;
+    mapping(address => uint256) rewards;
 
     uint256 intentid = 0;
 
-     function beforeAddLiquidity(
+    modifier nonReentrant() {
+        require(!locked, "Reentrancy blocked");
+        locked = true;
+        _;
+        locked = false;
+    }
+
+    modifier validIntent(uint256 intentId) {
+        require(intentId < intentid, "Invalid intent");
+        _;
+    }
+
+    function beforeAddLiquidity(
         address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         bytes calldata hookData
-    ) external returns (bytes4) {
+    ) external override returns (bytes4) {
+        require(msg.sender == address(poolManager), "You can't proceed");
 
-        require( msg.sender == address(poolManager),"You can't proceed");
+        LiquidityIntent memory _liquidityIntent;
 
-        LiquidityIntent memory _liquidityIntent ;
-       
         _liquidityIntent.lp = sender;
         _liquidityIntent.poolKey = key;
         _liquidityIntent.action = actionType.Add;
         _liquidityIntent.queueBlock = block.number;
-        _liquidityIntent.executeAfterBlock = _liquidityIntent.queueBlock + delay_block;
+        _liquidityIntent.executeAfterBlock =
+            _liquidityIntent.queueBlock +
+            delay_block;
         _liquidityIntent.isExecuted = false;
-        intent[intentid] =  _liquidityIntent;
+        _liquidityIntent.expiryBlock = block.number + delay_block + gracePeriod;
+        intent[intentid] = _liquidityIntent;
         intent[intentid].tickLower = params.tickLower;
         intent[intentid].tickUpper = params.tickUpper;
         intent[intentid].liquidityDelta = params.liquidityDelta;
@@ -60,52 +93,55 @@ contract LPPrivacy is IHooks{
         return this.beforeAddLiquidity.selector;
     }
 
-     function beforeRemoveLiquidity(
+    function beforeRemoveLiquidity(
         address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         bytes calldata hookData
-    ) external returns (bytes4) {
-         LiquidityIntent memory _liquidityIntent ;
-       
+    ) external override returns (bytes4) {
+        LiquidityIntent memory _liquidityIntent;
+
         _liquidityIntent.lp = sender;
         _liquidityIntent.poolKey = key;
         _liquidityIntent.action = actionType.Remove;
         _liquidityIntent.queueBlock = block.number;
-        _liquidityIntent.executeAfterBlock = _liquidityIntent.queueBlock + delay_block;
+        _liquidityIntent.executeAfterBlock =
+            _liquidityIntent.queueBlock +
+            delay_block;
+        _liquidityIntent.expiryBlock = block.number + delay_block + gracePeriod;
         _liquidityIntent.isExecuted = false;
-        intent[intentid] =  _liquidityIntent;
+        intent[intentid] = _liquidityIntent;
         intent[intentid].tickLower = params.tickLower;
         intent[intentid].tickUpper = params.tickUpper;
         intent[intentid].liquidityDelta = params.liquidityDelta;
         emit queuedIntent(intentid);
         intentid += 1;
         return this.beforeRemoveLiquidity.selector;
-
     }
 
-    function queueIntentForFee(uint256 fees, uint256 intentId) public payable  {
+    function queueIntentFee(
+        uint256 fees,
+        uint256 intentId
+    ) public payable validIntent(intentId) {
+        require(msg.sender == intent[intentId].lp);
         require(msg.value >= fees);
         intentFee[intentId] = fees;
-
     }
 
-    function executeIntent(uint256 intentId, uint Fees) public {
-        if (intentId >= intentid) {
-            revert();
-        }
-        if (intentFee[intentId] <= 0) {
-            revert();
-        }
+    function executeIntent(uint256 intentId) public validIntent(intentId) {
+        require(!intent[intentId].isCancelled);
+        require(intentFee[intentId] > 0, "No fee");
+        require(msg.sender != intent[intentId].lp);
+
         if (intent[intentId].isExecuted == true) {
             revert();
         }
         uint256 current_block = block.number;
-        if(current_block < intent[intentId].executeAfterBlock) {
+        if (current_block < intent[intentId].executeAfterBlock) {
             revert();
         }
 
-        bytes hookData;
+        require(current_block <= intent[intentId].expiryBlock);
 
         ModifyLiquidityParams tParams;
         int24 tLower = intent[intentId].tickLower;
@@ -120,86 +156,180 @@ contract LPPrivacy is IHooks{
                 revert();
             }
         }
-        
 
         if (intent[intentId].action == Remove) {
             if (lDelta >= 0) {
                 revert();
             }
         }
+
+        bytes hookData;
         hookData = abi.encode(msg.sender, intent[intentId].lp, intentId);
 
-        poolManager.modifyLiquidity(intent[intentId].poolKey, tParams, hookData);
+        poolManager.modifyLiquidity(
+            intent[intentId].poolKey,
+            tParams,
+            hookData
+        );
+    }
+
+    function afterAddLiquidity(
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued,
+        bytes calldata hookData
+    ) external override returns (bytes4, BalanceDelta) {
+        require(msg.sender == poolManager);
+        (address executerAddress, address LPAddress, uint256 intentId) = abi
+            .decode(hookData, (address, address, uint256));
+        LiquidityIntent storage intentt = intent[intentId];
+
+        require(!intentt.isExecuted);
+        require(intentId < intentid);
+        uint256 fees = intentFee[intentId];
+        intentFee[intentId] = 0;
+        rewards[executerAddress] += fees;
+        intentt[intentId].isExecuted = true;
+
+        address token0 = key.currency0;
+        address token1 = key.currency1;
+
+        int256 a0 = delta.amount0();
+        int256 a1 = delta.amount1();
+
+        if (a0 < 0) {
+            poolManager.settle(token0, LPAddress, -a0);
+        }
+
+        if (a0 > 0) {
+            poolManager.take(token0, LPAddress, a0);
+        }
+
+        if (a1 < 0) {
+            poolManager.settle(token1, LPAddress, -a1);
+        }
+
+        if (a1 > 0) {
+            poolManager.take(token1, LPAddress, a1);
+        }
 
         emit executedIntent(intentId);
-        
+        return (this.afterAddLiquidity.selector, delta);
     }
 
-
-     function afterAddLiquidity(
+    function afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         BalanceDelta delta,
         BalanceDelta feesAccrued,
         bytes calldata hookData
-    ) external returns (bytes4, BalanceDelta) {
-
-         require(msg.sender == poolManager);
-        (address executerAddress, address LPAddress, uint256 intentId) = abi.decode(hookData,(address, address, uint256));
-        LiquidityIntent storage intentt = intent[intentId];
-        require(intentt.isExecuted == false);
-        address token0 = delta;
-        address token1 = feesAccrued;
-
-        if (token1 < 0) {
-            token1 = 
-        }
-
-        if (token0 > 0) {
-
-        }
-
-        
-
-        intentt[intentId].isExecuted = true;
-        intentFee[intentId] = 0;
-        return this.afterAddLiquidity.selector;
-    }
-
-     function afterRemoveLiquidity(
-        address sender,
-        PoolKey calldata key,
-        ModifyLiquidityParams calldata params,
-        BalanceDelta delta,
-        BalanceDelta feesAccrued,
-        bytes calldata hookData
-    ) external returns (bytes4, BalanceDelta) {
-
-         require(msg.sender == poolManager);
-        (address executerAddress, address LPAddress, uint256 intentId) = abi.decode(hookData,(address, address, uint256));
+    ) external override returns (bytes4, BalanceDelta) {
+        require(msg.sender == poolManager);
+        (address executerAddress, address LPAddress, uint256 intentId) = abi
+            .decode(hookData, (address, address, uint256));
         LiquidityIntent storage intentt = intent[intentId];
 
-        require(intentt.isExecuted == false);
-        address token0 = delta;
-        address token1 = feesAccrued;
+        require(intentId < intentid);
 
-        if (token1 < 0) {
-            token1 = 
-        }
-
-        if (token0 > 0) {
-
-        }
-
-        
-        intentt[intentId].isExecuted = true;
+        require(!intentt.isExecuted);
+        uint256 fees = intentFee[intentId];
         intentFee[intentId] = 0;
+        rewards[executerAddress] += fees;
+        intentt[intentId].isExecuted = true;
 
-        return this.afterRemoveLiquidity.selector;
+        address token0 = key.currency0;
+        address token1 = key.currency1;
 
+        int256 a0 = delta.amount0();
+        int256 a1 = delta.amount1();
+
+        if (a0 < 0) {
+            poolManager.settle(token0, LPAddress, -a0);
+        }
+
+        if (a0 > 0) {
+            poolManager.take(token0, LPAddress, a0);
+        }
+
+        if (a1 < 0) {
+            poolManager.settle(token1, LPAddress, -a1);
+        }
+
+        if (a1 > 0) {
+            poolManager.take(token1, LPAddress, a1);
+        }
+
+        emit executedIntent(intentId);
+        return (this.afterRemoveLiquidity.selector, delta);
     }
 
+    function withdraw(uint256 amount) external nonReentrant {
+        amount = rewards[msg.sender];
+        require(amount > 0);
+        rewards[msg.sender] = 0;
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "ETH transfer failed");
+    }
 
+    function refundAfterExpiry(
+        uint256 intentId
+    ) external nonReentrant validIntent(intentId) {
+        LiquidityIntent storage i = intent[intentId];
 
+        require(block.number > i.expiryBlock, "Not expired yet");
+        require(!i.isExecuted, "Already executed");
+        require(!i.isCancelled, "Already cancelled");
+
+        uint256 fee = intentFee[intentId];
+        require(fee > 0);
+
+        intentFee[intentId] = 0;
+        i.isCancelled = true;
+        (bool ok, ) = i.lp.call{value: fee}("");
+        require(ok, "Refund failed");
+    }
+
+    function cancelIntent(
+        uint256 intentId
+    ) external nonReentrant validIntent(intentId) {
+        LiquidityIntent storage i = intent[intentId];
+        require(msg.sender == i.lp);
+        require(!i.isExecuted);
+        require(!i.isCancelled);
+
+        uint256 fee = intentFee[intentId];
+        i.isCancelled = true;
+        intentFee[intentId] = 0;
+
+        if (fee > 0) {
+            (bool ok, ) = i.lp.call{value: fee}("");
+            require(ok, "Refund failed");
+        }
+    }
+
+    function getHookPermissions()
+        external
+        pure
+        override
+        returns (Hooks.Permissions memory)
+    {
+        return
+            Hooks.Permissions({
+                beforeInitialize: false,
+                afterInitialize: false,
+                beforeAddLiquidity: true,
+                afterAddLiquidity: true,
+                beforeRemoveLiquidity: true,
+                afterRemoveLiquidity: true,
+                beforeSwap: false,
+                afterSwap: false,
+                beforeDonate: false,
+                afterDonate: false
+            });
+    }
+
+    receive() external payable {}
 }
