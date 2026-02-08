@@ -190,7 +190,7 @@ contract LPPrivacy is IHooks {
         uint256 fees = intentFee[intentId];
         intentFee[intentId] = 0;
         rewards[executerAddress] += fees;
-        intentt[intentId].isExecuted = true;
+        intentt.isExecuted = true;
 
         address token0 = key.currency0;
         address token1 = key.currency1;
@@ -237,7 +237,7 @@ contract LPPrivacy is IHooks {
         uint256 fees = intentFee[intentId];
         intentFee[intentId] = 0;
         rewards[executerAddress] += fees;
-        intentt[intentId].isExecuted = true;
+        intentt.isExecuted = true;
 
         address token0 = key.currency0;
         address token1 = key.currency1;
@@ -386,6 +386,5 @@ function afterDonate(
     return this.afterDonate.selector;
 }
 
-
-    receive() external payable {}
+receive() external payable {}
 }
