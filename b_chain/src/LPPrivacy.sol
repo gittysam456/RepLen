@@ -5,11 +5,10 @@ pragma solidity ^0.8.10;
 import "@V4-Core/src/interfaces/IHooks.sol";
 import "@V4-Core/src/interfaces/IPoolManager.sol";
 import "@V4-Core/src/libraries/Hooks.sol";
-import {Currency, CurrencyLibrary} from  "@V4-Core/src/types/Currency.sol";
+import {Currency, CurrencyLibrary} from "@V4-Core/src/types/Currency.sol";
 import {PoolKey} from "@V4-Core/src/types/PoolKey.sol";
 import "@V4-Core/src/types/BeforeSwapDelta.sol";
 import "@V4-Core/src/types/BalanceDelta.sol";
-
 
 contract LPPrivacy is IHooks {
     using CurrencyLibrary for Currency;
@@ -71,19 +70,21 @@ contract LPPrivacy is IHooks {
     }
 
     function beforeInitialize(
-        address sender, 
-        PoolKey calldata key, 
+        address sender,
+        PoolKey calldata key,
         uint160 sqrtPriceX96
-        ) external returns (bytes4);
+    ) external returns (bytes4) {
+        return this.beforeInitialize.selector;
+    }
 
-        function afterInitialize(
-            address sender, 
-            PoolKey calldata key, 
-            uint160 sqrtPriceX96, 
-            int24 tick)
-        external
-        returns (bytes4);
-
+    function afterInitialize(
+        address sender,
+        PoolKey calldata key,
+        uint160 sqrtPriceX96,
+        int24 tick
+    ) external returns (bytes4) {
+        return this.afterInitialize.selector;
+    }
 
     function beforeAddLiquidity(
         address sender,
@@ -164,6 +165,7 @@ contract LPPrivacy is IHooks {
         require(current_block <= intent[intentId].expiryBlock);
 
         IPoolManager.ModifyLiquidityParams memory tParams;
+
         int24 tLower = intent[intentId].tickLower;
         int24 tUpper = intent[intentId].tickUpper;
         int128 lDelta = intent[intentId].liquidityDelta;
@@ -213,26 +215,26 @@ contract LPPrivacy is IHooks {
         rewards[executerAddress] += fees;
         intentt.isExecuted = true;
 
-        address token0 = Currency.unwrap(key.currency0);
-        address token1 = Currency.unwrap(key.currency1);
+        Currency token0 = key.currency0;
+        Currency token1 = key.currency1;
 
         int256 a0 = delta.amount0();
         int256 a1 = delta.amount1();
 
         if (a0 < 0) {
-            poolManager.settle(token0, LPAddress, -a0);
+            IPoolManager.settle(a0);
         }
 
         if (a0 > 0) {
-            poolManager.take(token0, LPAddress, a0);
+            IPoolManager.take(token0, LPAddress, a0);
         }
 
         if (a1 < 0) {
-            poolManager.settle(token1, LPAddress, -a1);
+            IPoolManager.settle(a1);
         }
 
         if (a1 > 0) {
-            poolManager.take(token1, LPAddress, a1);
+            IPoolManager.take(token1, LPAddress, a1);
         }
 
         emit executedIntent(intentId);
@@ -260,26 +262,26 @@ contract LPPrivacy is IHooks {
         rewards[executerAddress] += fees;
         intentt.isExecuted = true;
 
-        address token0 = Currency.unwrap(key.currency0);
-        address token1 = Currency.unwrap(key.currency1);
+        Currency token0 = key.currency0;
+        Currency token1 = key.currency1;
 
         int256 a0 = delta.amount0();
         int256 a1 = delta.amount1();
 
         if (a0 < 0) {
-            poolManager.settle(token0, LPAddress, -a0);
+            IPoolManager.settle(a0);
         }
 
         if (a0 > 0) {
-            poolManager.take(token0, LPAddress, a0);
+            IPoolManager.take(token0, LPAddress, a0);
         }
 
         if (a1 < 0) {
-            poolManager.settle(token1, LPAddress, -a1);
+            IPoolManager.settle(a1);
         }
 
         if (a1 > 0) {
-            poolManager.take(token1, LPAddress, a1);
+            IPoolManager.take(token1, LPAddress, a1);
         }
 
         emit executedIntent(intentId);
@@ -351,23 +353,22 @@ contract LPPrivacy is IHooks {
     }
 
     function beforeSwap(
-        address sender, 
-        PoolKey calldata key, 
-        IPoolManager.SwapParams calldata params, 
-        bytes calldata hookData)
-        external
-        returns (bytes4, BeforeSwapDelta, uint24) {
-            return (this.beforeSwap.selector,BeforeSwapDelta.wrap(0),0);
-        }
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        bytes calldata hookData
+    ) external returns (bytes4, BeforeSwapDelta, uint24) {
+        return (this.beforeSwap.selector, BeforeSwapDelta.wrap(0), 0);
+    }
 
-        function afterSwap(
+    function afterSwap(
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         BalanceDelta delta,
         bytes calldata hookData
     ) external returns (bytes4, int128) {
-        return (this.afterSwap.selector,0);
+        return (this.afterSwap.selector, 0);
     }
 
     function beforeDonate(
@@ -376,11 +377,11 @@ contract LPPrivacy is IHooks {
         uint256 amount0,
         uint256 amount1,
         bytes calldata hookData
-    ) external returns (bytes4){
+    ) external returns (bytes4) {
         return this.beforeDonate.selector;
     }
 
-      function afterDonate(
+    function afterDonate(
         address sender,
         PoolKey calldata key,
         uint256 amount0,
@@ -390,6 +391,5 @@ contract LPPrivacy is IHooks {
         return this.afterDonate.selector;
     }
 
-
-receive() external payable {}
+    receive() external payable {}
 }
