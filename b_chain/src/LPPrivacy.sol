@@ -222,19 +222,19 @@ contract LPPrivacy is IHooks {
         int256 a1 = delta.amount1();
 
         if (a0 < 0) {
-            IPoolManager.settle(a0);
+            poolManager.settle();
         }
 
         if (a0 > 0) {
-            IPoolManager.take(token0, LPAddress, a0);
+            poolManager.take(token0, LPAddress, (uint256)(a0));
         }
 
         if (a1 < 0) {
-            IPoolManager.settle(a1);
+            poolManager.settle();
         }
 
         if (a1 > 0) {
-            IPoolManager.take(token1, LPAddress, a1);
+            poolManager.take(token1, LPAddress, (uint256)(a1));
         }
 
         emit executedIntent(intentId);
@@ -269,19 +269,19 @@ contract LPPrivacy is IHooks {
         int256 a1 = delta.amount1();
 
         if (a0 < 0) {
-            IPoolManager.settle(a0);
+            poolManager.settle();
         }
 
         if (a0 > 0) {
-            IPoolManager.take(token0, LPAddress, a0);
+            poolManager.take(token0, LPAddress, (uint256)(a0));
         }
 
         if (a1 < 0) {
-            IPoolManager.settle(a1);
+            poolManager.settle();
         }
 
         if (a1 > 0) {
-            IPoolManager.take(token1, LPAddress, a1);
+            poolManager.take(token1, LPAddress, (uint256)(a1));
         }
 
         emit executedIntent(intentId);
@@ -348,7 +348,11 @@ contract LPPrivacy is IHooks {
                 beforeSwap: false,
                 afterSwap: false,
                 beforeDonate: false,
-                afterDonate: false
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false,
+                afterAddLiquidityReturnDelta: false
             });
     }
 
