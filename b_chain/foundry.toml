@@ -6,3 +6,6 @@ libs = ["lib"]
 remappings = [
     "@V4-Core/=lib/v4-core/"
 ]
+
+[rpc_endpoints]
+testnet = "${RPC_URL}"
