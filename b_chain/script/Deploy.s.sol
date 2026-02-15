@@ -7,10 +7,9 @@ import "@V4-Core/src/interfaces/IPoolManager.sol";
 
 contract Deploy is Script {
      function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerKey);
+        vm.startBroadcast();
 
-       IPoolManager poolmanager = IPoolManager(address(vm.envAddress("POOL_MANAGER")));
+       IPoolManager poolmanager = IPoolManager(vm.envAddress("POOL_MANAGER"));
         uint256 delay = 20;
         uint256 grace = 100;
 
