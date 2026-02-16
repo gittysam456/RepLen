@@ -3,10 +3,7 @@ module github.com/Tanya0816/RepLen
 go 1.25.6
 
 require (
-<<<<<<< HEAD
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-=======
->>>>>>> 0c328719b8b6817c30e98c0027c6f8795b9d3534
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251001021608-1fe7b43fc4d6 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
@@ -16,19 +13,12 @@ require (
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
-<<<<<<< HEAD
 	github.com/ethereum/go-ethereum v1.16.8 // indirect
-=======
-
->>>>>>> 0c328719b8b6817c30e98c0027c6f8795b9d3534
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-<<<<<<< HEAD
 	github.com/gorilla/websocket v1.4.2 // indirect
-=======
->>>>>>> 0c328719b8b6817c30e98c0027c6f8795b9d3534
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/supranational/blst v0.3.16-0.20250831170142-f48500c1fdbe // indirect
