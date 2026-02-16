@@ -18,7 +18,9 @@ type LenIntent struct {
 	Action    ActionType
 	Address   string
 	PoolID    string
-	Amount	float64
+	Amount	  int64
 	CreatedAt time.Time      // when the intent was created
 	ExecutedAt time.Time    //when the intent was executed
+    Executed   bool           // whether the intent has been executed
+
 }
